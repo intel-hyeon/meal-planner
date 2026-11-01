@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ChefHat, ShoppingBag, Trash2, Plus, Database, RefreshCw } from 'lucide-react';
+import { ChefHat, ShoppingBag, Plus, Database, RefreshCw, Sparkles } from 'lucide-react';
 import { ActiveTab, Recipe, CartItem } from './types';
 import {
   loadRecipes,
@@ -10,12 +10,18 @@ import {
   clearAllStorage,
   INITIAL_RECIPES,
 } from './utils/storage';
+import RecipeModal from './components/RecipeModal';
+import RecipeCard from './components/RecipeCard';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('recipes');
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [statusMessage, setStatusMessage] = useState<string>('');
+
+  // 모달 상태 (새 작성 / 수정)
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
 
   // 1-2. 브라우저 내 LocalStorage에서 초기 데이터 불러오기
   useEffect(() => {
@@ -27,10 +33,39 @@ export default function App() {
 
   const showStatus = (msg: string) => {
     setStatusMessage(msg);
-    setTimeout(() => setStatusMessage(''), 3000);
+    setTimeout(() => setStatusMessage(''), 3500);
   };
 
-  // 1-3. 캐시에서 특정 레시피 데이터를 안전하게 제거하는 삭제 함수
+  // 2-1 & 2-2. 새 레시피 작성 모달 열기
+  const handleOpenCreateModal = () => {
+    setEditingRecipe(null);
+    setIsModalOpen(true);
+  };
+
+  // 2-7. 기존 레시피 수정 모달 열기
+  const handleOpenEditModal = (recipe: Recipe) => {
+    setEditingRecipe(recipe);
+    setIsModalOpen(true);
+  };
+
+  // 2-6 & 2-7. 레시피 저장 (신규 등록 및 수정) -> 캐시 즉각 동기화
+  const handleSaveRecipe = (savedRecipe: Recipe) => {
+    let updatedRecipes: Recipe[];
+    const isEdit = recipes.some((r) => r.id === savedRecipe.id);
+
+    if (isEdit) {
+      updatedRecipes = recipes.map((r) => (r.id === savedRecipe.id ? savedRecipe : r));
+      showStatus(`'${savedRecipe.name}' 레시피가 수정되었습니다. (빈칸은 자동 정리됨)`);
+    } else {
+      updatedRecipes = [savedRecipe, ...recipes];
+      showStatus(`새 레시피 '${savedRecipe.name}'가 등록되었습니다. (빈칸은 자동 정리됨)`);
+    }
+
+    setRecipes(updatedRecipes);
+    saveRecipes(updatedRecipes);
+  };
+
+  // 1-3 & 2-7. 캐시에서 특정 레시피 삭제
   const handleDeleteRecipe = (id: string, name: string) => {
     if (!window.confirm(`'${name}' 레시피를 정말 삭제하시겠습니까? (캐시에서도 영구 삭제됩니다)`)) {
       return;
@@ -39,19 +74,18 @@ export default function App() {
     const updatedRecipes = recipes.filter((r) => r.id !== id);
     setRecipes(updatedRecipes);
 
-    // 장바구니에 해당 레시피가 있다면 함께 안전하게 제거
     deleteCartItemFromStorage(id);
     const updatedCart = cart.filter((item) => item.recipeId !== id);
     setCart(updatedCart);
 
-    showStatus(`'${name}' 레시피가 LocalStorage 캐시에서 성공적으로 삭제되었습니다.`);
+    showStatus(`'${name}' 레시피가 LocalStorage 캐시에서 안전하게 삭제되었습니다.`);
   };
 
-  // 기본 샘플 레시피 다시 채우기
+  // 기본 샘플 레시피 복원
   const handleResetSampleData = () => {
     saveRecipes(INITIAL_RECIPES);
     setRecipes(INITIAL_RECIPES);
-    showStatus('기본 샘플 레시피가 LocalStorage에 다시 저장되었습니다.');
+    showStatus('기본 샘플 레시피가 LocalStorage에 복원되었습니다.');
   };
 
   // 캐시 완전 비우기
@@ -65,7 +99,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col">
-      {/* 상단 네비게이션 헤더 */}
+      {/* 상단 헤더 네비게이션 */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-xs">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -78,7 +112,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* 1-1. 레시피 탭과 장바구니 탭 전환 버튼 */}
+          {/* 1-1. 레시피 탭 / 장바구니 탭 전환 버튼 */}
           <nav className="flex items-center gap-2 p-1 bg-slate-100 rounded-xl border border-slate-200">
             <button
               onClick={() => setActiveTab('recipes')}
@@ -117,8 +151,9 @@ export default function App() {
 
       {/* 상태 안내 토스트 바 */}
       {statusMessage && (
-        <div className="bg-emerald-600 text-white text-sm py-2 px-4 text-center font-medium shadow-sm transition-all">
-          {statusMessage}
+        <div className="bg-emerald-600 text-white text-sm py-2 px-4 text-center font-medium shadow-sm flex items-center justify-center gap-2 animate-in slide-in-from-top duration-200">
+          <Sparkles className="w-4 h-4" />
+          <span>{statusMessage}</span>
         </div>
       )}
 
@@ -131,11 +166,11 @@ export default function App() {
               <div>
                 <h2 className="text-xl font-bold text-slate-900">등록된 레시피 목록</h2>
                 <p className="text-sm text-slate-500 mt-1">
-                  작성된 레시피는 브라우저 LocalStorage에 안전하게 영구 저장됩니다. (새로고침 시 유지)
+                  레시피를 등록하면 빈칸은 자동으로 정리(증발)되며, 로컬 캐시에 즉각 영구 저장됩니다.
                 </p>
               </div>
 
-              {/* 상단 보조 조작 버튼들 */}
+              {/* 상단 컨트롤 버튼 그룹 */}
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={handleResetSampleData}
@@ -153,90 +188,49 @@ export default function App() {
                   <Database className="w-3.5 h-3.5" />
                   캐시 비우기
                 </button>
+                {/* 2-1. 새 레시피 작성 버튼 */}
                 <button
-                  disabled
-                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg opacity-60 cursor-not-allowed shadow-xs"
-                  title="2단계에서 레시피 등록 폼이 완성됩니다"
+                  onClick={handleOpenCreateModal}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors shadow-xs"
                 >
                   <Plus className="w-4 h-4" />
-                  새 레시피 작성 (2단계 예정)
+                  새 레시피 작성
                 </button>
               </div>
             </div>
 
-            {/* 레시피 카드 목록 그리드 */}
+            {/* 2-7. 레시피 카드 목록 그리드 렌더링 */}
             {recipes.length === 0 ? (
               <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center">
                 <ChefHat className="w-12 h-12 text-slate-300 mx-auto mb-3" />
                 <h3 className="text-base font-semibold text-slate-700">저장된 레시피가 없습니다</h3>
                 <p className="text-sm text-slate-500 mt-1 mb-4">
-                  우측 상단의 '샘플 복원' 버튼을 누르거나 2단계에서 새 레시피를 추가해 보세요.
+                  '새 레시피 작성' 버튼을 눌러 첫 레시피를 등록해 보세요!
                 </p>
-                <button
-                  onClick={handleResetSampleData}
-                  className="px-4 py-2 text-sm font-semibold text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors"
-                >
-                  기본 샘플 레시피 불러오기
-                </button>
+                <div className="flex justify-center gap-2">
+                  <button
+                    onClick={handleOpenCreateModal}
+                    className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors inline-flex items-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" /> 새 레시피 작성
+                  </button>
+                  <button
+                    onClick={handleResetSampleData}
+                    className="px-4 py-2 text-sm font-semibold text-emerald-700 bg-emerald-50 rounded-xl hover:bg-emerald-100 transition-colors"
+                  >
+                    샘플 불러오기
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
                 {recipes.map((recipe) => (
-                  <div
+                  <RecipeCard
                     key={recipe.id}
-                    className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div>
-                          <h3 className="font-bold text-slate-900 text-lg">{recipe.name}</h3>
-                          <span className="inline-block mt-1 px-2.5 py-0.5 text-xs font-semibold rounded-md bg-emerald-50 text-emerald-700 border border-emerald-100">
-                            기준 {recipe.servings}인분
-                          </span>
-                        </div>
-                        {/* 1-3. 캐시 삭제 함수와 연결된 삭제 버튼 */}
-                        <button
-                          onClick={() => handleDeleteRecipe(recipe.id, recipe.name)}
-                          className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
-                          title="레시피 삭제 (LocalStorage에서 영구 제거)"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      {/* 재료 목록 미리보기 */}
-                      <div className="mt-3 pt-3 border-t border-slate-100">
-                        <p className="text-xs font-semibold text-slate-500 mb-2">
-                          재료 목록 ({recipe.ingredients.length}개)
-                        </p>
-                        <ul className="space-y-1">
-                          {recipe.ingredients.slice(0, 4).map((ing) => (
-                            <li key={ing.id} className="text-xs text-slate-600 flex justify-between">
-                              <span>• {ing.name}</span>
-                              <span className="font-mono text-slate-500">
-                                {ing.amount} {ing.unit}
-                              </span>
-                            </li>
-                          ))}
-                          {recipe.ingredients.length > 4 && (
-                            <li className="text-xs text-slate-400">
-                              + 외 {recipe.ingredients.length - 4}개 재료
-                            </li>
-                          )}
-                        </ul>
-                      </div>
-                    </div>
-
-                    <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between">
-                      <span className="text-[11px] text-slate-400">LocalStorage 동기화됨</span>
-                      <button
-                        disabled
-                        className="px-3 py-1.5 text-xs font-medium text-slate-400 bg-slate-100 rounded-lg cursor-not-allowed"
-                      >
-                        장바구니 담기 (3단계 예정)
-                      </button>
-                    </div>
-                  </div>
+                    recipe={recipe}
+                    onEdit={handleOpenEditModal}
+                    onDelete={handleDeleteRecipe}
+                  />
                 ))}
               </div>
             )}
@@ -249,7 +243,7 @@ export default function App() {
             <div className="pb-4 border-b border-slate-200">
               <h2 className="text-xl font-bold text-slate-900">장바구니 및 비례 계산 목록</h2>
               <p className="text-sm text-slate-500 mt-1">
-                담긴 레시피의 목표 인분 수에 맞춰 식재료 양을 자동 계산하고 동일 재료를 합산합니다.
+                담긴 레시피의 목표 인분 수(M)에 맞춰 식재료 양을 자동 계산하고 동일 재료를 합산합니다.
               </p>
             </div>
 
@@ -257,10 +251,10 @@ export default function App() {
               <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-4">
                 <ShoppingBag className="w-8 h-8" />
               </div>
-              <h3 className="text-lg font-bold text-slate-800">장바구니 기능 준비 중</h3>
+              <h3 className="text-lg font-bold text-slate-800">장바구니 기능 연동 예정 (3단계)</h3>
               <p className="text-sm text-slate-500 mt-2 mb-6 leading-relaxed">
-                현재 <strong>1단계(기본 레이아웃 및 LocalStorage 스토리지 연동)</strong>가 준비되었습니다.<br />
-                3단계 및 4단계에서 목표 인분 수(M인분) 설정, 비례 계산 및 재료 정렬 합산 기능이 연동됩니다.
+                현재 <strong>2단계(레시피 동적 CRUD 및 빈칸 자동정리)</strong> 구현이 완료되었습니다.<br />
+                다음 3단계에서 레시피를 장바구니에 담고 인분 수를 조절하는 비례 계산 및 합산 기능이 연동됩니다.
               </p>
               <button
                 onClick={() => setActiveTab('recipes')}
@@ -273,6 +267,14 @@ export default function App() {
           </section>
         )}
       </main>
+
+      {/* 2-1. 레시피 작성 및 수정 모달 다이얼로그 */}
+      <RecipeModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSave={handleSaveRecipe}
+        editingRecipe={editingRecipe}
+      />
 
       {/* 푸터 */}
       <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400">
