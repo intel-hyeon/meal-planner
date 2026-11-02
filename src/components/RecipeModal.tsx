@@ -163,9 +163,6 @@ export default function RecipeModal({
               <h2 className="text-lg font-bold text-slate-900">
                 {editingRecipe ? '레시피 수정' : '새 레시피 작성'}
               </h2>
-              <p className="text-xs text-slate-500">
-                저장 시 내용이 없는 빈칸 행은 자동으로 정리(증발)됩니다.
-              </p>
             </div>
           </div>
           <button
@@ -195,7 +192,7 @@ export default function RecipeModal({
                 type="text"
                 value={recipeName}
                 onChange={(e) => setRecipeName(e.target.value)}
-                placeholder="예: 백종원 김치찌개, 된장찌개"
+                placeholder="예: 김치찌개, 된장찌개"
                 className="w-full px-3.5 py-2 text-sm border border-slate-300 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
                 maxLength={40}
                 required
