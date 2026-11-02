@@ -26,13 +26,39 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
 
-  // 1-2. 브라우저 내 LocalStorage에서 초기 데이터 불러오기
+  // 1-2 & 4-1. 브라우저 내 LocalStorage에서 초기 데이터 불러오기 및 고아 데이터 정리
   useEffect(() => {
     const loadedRecipes = loadRecipes();
     const loadedCart = loadCart();
+
+    // 4-1 무결성 방어: 캐시에 남아있는 고아 장바구니 항목(존재하지 않는 레시피 ID) 자동 청소
+    const validRecipeIds = new Set(loadedRecipes.map((r) => r.id));
+    const sanitizedCart = loadedCart.filter((item) => validRecipeIds.has(item.recipeId));
+    if (sanitizedCart.length !== loadedCart.length) {
+      saveCart(sanitizedCart);
+    }
+
     setRecipes(loadedRecipes);
-    setCart(loadedCart);
+    setCart(sanitizedCart);
   }, []);
+
+  // 4-1. 레시피 목록이 변경될 때 장바구니의 무결성을 항상 보장 (고아 데이터 자동 제거)
+  useEffect(() => {
+    if (recipes.length === 0 && cart.length > 0) {
+      setCart([]);
+      saveCart([]);
+      return;
+    }
+    const validIds = new Set(recipes.map((r) => r.id));
+    setCart((prevCart) => {
+      const filtered = prevCart.filter((item) => validIds.has(item.recipeId));
+      if (filtered.length !== prevCart.length) {
+        saveCart(filtered);
+        return filtered;
+      }
+      return prevCart;
+    });
+  }, [recipes]);
 
   // 3-5 & 3-6. 장바구니 합산 & 가나다순 정렬 (useMemo로 파생 상태 계산)
   const aggregatedIngredients = useMemo(
@@ -295,7 +321,7 @@ export default function App() {
               </p>
             </div>
 
-            {/* 3-1 ~ 3-6. CartView 컴포넌트 */}
+            {/* 3-1 ~ 3-6 & 4-1 ~ 4-3. CartView 컴포넌트 */}
             <CartView
               cart={cart}
               recipes={recipes}
@@ -303,6 +329,7 @@ export default function App() {
               onUpdateTargetServings={handleUpdateTargetServings}
               onRemoveFromCart={handleRemoveFromCart}
               onGoToRecipes={() => setActiveTab('recipes')}
+              onShowToast={showStatus}
             />
           </section>
         )}

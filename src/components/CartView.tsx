@@ -1,7 +1,18 @@
 import { useState } from 'react';
-import { ShoppingBag, Trash2, Plus, Minus, ArrowRight, ListOrdered, Copy } from 'lucide-react';
+import {
+  ShoppingBag,
+  Trash2,
+  Plus,
+  Minus,
+  ArrowRight,
+  ListOrdered,
+  Copy,
+  Check,
+  FileText,
+} from 'lucide-react';
 import { Recipe, CartItem, AggregatedIngredient } from '../types';
 import { calculateScaledAmount, formatAmount } from '../utils/calculator';
+import { formatCartListToText, copyToClipboard } from '../utils/clipboard';
 
 interface CartViewProps {
   recipes: Recipe[];
@@ -10,6 +21,7 @@ interface CartViewProps {
   onUpdateTargetServings: (recipeId: string, targetServings: number) => void;
   onRemoveFromCart: (recipeId: string) => void;
   onGoToRecipes: () => void;
+  onShowToast: (message: string) => void;
 }
 
 export default function CartView({
@@ -19,7 +31,10 @@ export default function CartView({
   onUpdateTargetServings,
   onRemoveFromCart,
   onGoToRecipes,
+  onShowToast,
 }: CartViewProps) {
+  const [copied, setCopied] = useState(false);
+  const [showTextPreview, setShowTextPreview] = useState(false);
   const [showPreviewMap, setShowPreviewMap] = useState<Record<string, boolean>>({});
 
   const recipeMap = new Map<string, Recipe>();
@@ -27,6 +42,22 @@ export default function CartView({
 
   const togglePreview = (id: string) => {
     setShowPreviewMap((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // 4-2. 최종 장바구니 리스트를 보기 좋은 텍스트(문자열) 형태로 가공
+  const formattedText = formatCartListToText(aggregatedIngredients);
+
+  // 4-3. 클립보드 복사 버튼 클릭 핸들러 (원클릭 복사 및 피드백)
+  const handleCopy = async () => {
+    if (aggregatedIngredients.length === 0) return;
+    const success = await copyToClipboard(formattedText);
+    if (success) {
+      setCopied(true);
+      onShowToast('장보기 목록이 클립보드에 복사되었습니다! (Ctrl+V로 붙여넣기)');
+      setTimeout(() => setCopied(false), 2500);
+    } else {
+      onShowToast('클립보드 복사에 실패했습니다. 권한을 확인해 주세요.');
+    }
   };
 
   if (cart.length === 0) {
@@ -68,6 +99,7 @@ export default function CartView({
           <div className="space-y-4">
             {cart.map((cartItem) => {
               const recipe = recipeMap.get(cartItem.recipeId);
+              // 4-1 방어 로직: 원본 레시피가 없으면 렌더링하지 않음 (null 방어)
               if (!recipe) return null;
 
               const targetServings = cartItem.targetServings;
@@ -181,7 +213,7 @@ export default function CartView({
           </div>
         </section>
 
-        {/* 우측: 3-5 & 3-6. 최종 가나다순 합산 장보기 목록 (7컬럼) */}
+        {/* 우측: 3-5 & 3-6 & 4-2 & 4-3. 최종 합산 장보기 목록 + 클립보드 복사 (7컬럼) */}
         <section className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-6 shadow-xs sticky top-24">
           <div className="flex items-center justify-between pb-4 border-b border-slate-200">
             <div>
@@ -232,19 +264,50 @@ export default function CartView({
             </div>
           )}
 
-          {/* 4단계 예정: 클립보드 복사 안내 영역 */}
-          <div className="mt-6 pt-4 border-t border-slate-200 flex items-center justify-between">
-            <span className="text-xs text-slate-400">
-              ※ 클립보드 복사 및 외부 내보내기는 다음 4단계에서 구현됩니다.
-            </span>
-            <button
-              disabled
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs bg-slate-100 text-slate-400 cursor-not-allowed"
-              title="4단계에서 클립보드 복사 기능이 활성화됩니다"
-            >
-              <Copy className="w-3.5 h-3.5" />
-              <span>클립보드 복사 (4단계 예정)</span>
-            </button>
+          {/* 4-3. 클립보드 복사 액션 영역 (요구사항 #4) */}
+          <div className="mt-6 pt-4 border-t border-slate-200 space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              {/* 4-2. 텍스트 미리보기 토글 버튼 */}
+              <button
+                type="button"
+                onClick={() => setShowTextPreview(!showTextPreview)}
+                className="text-xs font-medium text-slate-500 hover:text-slate-800 inline-flex items-center gap-1"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>{showTextPreview ? '텍스트 미리보기 접기' : '복사될 텍스트 미리보기'}</span>
+              </button>
+
+              {/* 4-3. 클립보드 원클릭 복사 버튼 */}
+              <button
+                type="button"
+                onClick={handleCopy}
+                disabled={aggregatedIngredients.length === 0}
+                className={`inline-flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all shadow-xs ${
+                  copied
+                    ? 'bg-emerald-700 text-white ring-2 ring-emerald-300'
+                    : 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-98'
+                } disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-4 h-4 text-white" />
+                    <span>복사 완료!</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4" />
+                    <span>클립보드에 장보기 목록 복사</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* 4-2. 텍스트 미리보기 상자 */}
+            {showTextPreview && (
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs font-mono text-slate-700 whitespace-pre-wrap animate-in fade-in duration-150">
+                {formattedText}
+              </div>
+            )}
           </div>
         </section>
       </div>
