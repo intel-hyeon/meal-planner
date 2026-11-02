@@ -114,7 +114,7 @@ export default function RecipeCard({
           }`}
         >
           <ShoppingBag className="w-3.5 h-3.5" />
-          {isInCart ? '장바구니에 담김' : '장바구니 담기 (3단계)'}
+          {isInCart ? '장바구니에 담김' : '장바구니 담기'}
         </button>
       </div>
     </div>

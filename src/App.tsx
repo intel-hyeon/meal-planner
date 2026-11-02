@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { ChefHat, ShoppingBag, Plus, Database, RefreshCw, Sparkles } from 'lucide-react';
 import { ActiveTab, Recipe, CartItem } from './types';
 import {
@@ -6,12 +6,15 @@ import {
   saveRecipes,
   deleteRecipeFromStorage,
   loadCart,
+  saveCart,
   deleteCartItemFromStorage,
   clearAllStorage,
   INITIAL_RECIPES,
 } from './utils/storage';
+import { aggregateCartIngredients } from './utils/calculator';
 import RecipeModal from './components/RecipeModal';
 import RecipeCard from './components/RecipeCard';
+import CartView from './components/CartView';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('recipes');
@@ -30,6 +33,12 @@ export default function App() {
     setRecipes(loadedRecipes);
     setCart(loadedCart);
   }, []);
+
+  // 3-5 & 3-6. 장바구니 합산 & 가나다순 정렬 (useMemo로 파생 상태 계산)
+  const aggregatedIngredients = useMemo(
+    () => aggregateCartIngredients(recipes, cart),
+    [recipes, cart]
+  );
 
   const showStatus = (msg: string) => {
     setStatusMessage(msg);
@@ -81,6 +90,46 @@ export default function App() {
     showStatus(`'${name}' 레시피가 LocalStorage 캐시에서 안전하게 삭제되었습니다.`);
   };
 
+  // 3-1. 장바구니 담기 / 제거 토글
+  const handleToggleCart = (recipe: Recipe) => {
+    const isAlreadyInCart = cart.some((item) => item.recipeId === recipe.id);
+
+    if (isAlreadyInCart) {
+      // 장바구니에서 제거
+      deleteCartItemFromStorage(recipe.id);
+      const updatedCart = cart.filter((item) => item.recipeId !== recipe.id);
+      setCart(updatedCart);
+      showStatus(`'${recipe.name}'가 장바구니에서 제거되었습니다.`);
+    } else {
+      // 장바구니에 추가 (초기 목표 인분: 1)
+      const newCartItem: CartItem = {
+        recipeId: recipe.id,
+        targetServings: 1,
+      };
+      const updatedCart = [...cart, newCartItem];
+      setCart(updatedCart);
+      saveCart(updatedCart);
+      showStatus(`'${recipe.name}'가 장바구니에 담겼습니다.`);
+    }
+  };
+
+  // 3-2. 장바구니 내 목표 인분 수(M) 업데이트
+  const handleUpdateTargetServings = (recipeId: string, servings: number) => {
+    const updatedCart = cart.map((item) =>
+      item.recipeId === recipeId ? { ...item, targetServings: servings } : item
+    );
+    setCart(updatedCart);
+    saveCart(updatedCart);
+  };
+
+  // 장바구니에서 특정 레시피 제거 (장바구니 탭 내 삭제 버튼)
+  const handleRemoveFromCart = (recipeId: string) => {
+    deleteCartItemFromStorage(recipeId);
+    const updatedCart = cart.filter((item) => item.recipeId !== recipeId);
+    setCart(updatedCart);
+    showStatus('장바구니에서 레시피를 제거했습니다.');
+  };
+
   // 기본 샘플 레시피 복원
   const handleResetSampleData = () => {
     saveRecipes(INITIAL_RECIPES);
@@ -107,7 +156,7 @@ export default function App() {
               <ChefHat className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-900 leading-tight">식단 플래너 & 장바구니</h1>
+              <h1 className="text-lg font-bold text-slate-900 leading-tight">식단 플래너 &amp; 장바구니</h1>
               <p className="text-xs text-slate-500">레시피 기반 맞춤 식재료 비례 계산기</p>
             </div>
           </div>
@@ -165,9 +214,6 @@ export default function App() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
               <div>
                 <h2 className="text-xl font-bold text-slate-900">등록된 레시피 목록</h2>
-                <p className="text-sm text-slate-500 mt-1">
-                  레시피를 등록하면 빈칸은 자동으로 정리(증발)되며, 로컬 캐시에 즉각 영구 저장됩니다.
-                </p>
               </div>
 
               {/* 상단 컨트롤 버튼 그룹 */}
@@ -230,6 +276,8 @@ export default function App() {
                     recipe={recipe}
                     onEdit={handleOpenEditModal}
                     onDelete={handleDeleteRecipe}
+                    onAddToCart={handleToggleCart}
+                    isInCart={cart.some((item) => item.recipeId === recipe.id)}
                   />
                 ))}
               </div>
@@ -241,29 +289,21 @@ export default function App() {
         {activeTab === 'cart' && (
           <section className="space-y-6">
             <div className="pb-4 border-b border-slate-200">
-              <h2 className="text-xl font-bold text-slate-900">장바구니 및 비례 계산 목록</h2>
+              <h2 className="text-xl font-bold text-slate-900">장바구니</h2>
               <p className="text-sm text-slate-500 mt-1">
-                담긴 레시피의 목표 인분 수(M)에 맞춰 식재료 양을 자동 계산하고 동일 재료를 합산합니다.
+                담긴 레시피의 목표 인분 수에 맞춰 식재료 양을 자동 계산하고 동일 재료를 합산합니다.
               </p>
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center max-w-lg mx-auto">
-              <div className="w-16 h-16 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-4">
-                <ShoppingBag className="w-8 h-8" />
-              </div>
-              <h3 className="text-lg font-bold text-slate-800">장바구니 기능 연동 예정 (3단계)</h3>
-              <p className="text-sm text-slate-500 mt-2 mb-6 leading-relaxed">
-                현재 <strong>2단계(레시피 동적 CRUD 및 빈칸 자동정리)</strong> 구현이 완료되었습니다.<br />
-                다음 3단계에서 레시피를 장바구니에 담고 인분 수를 조절하는 비례 계산 및 합산 기능이 연동됩니다.
-              </p>
-              <button
-                onClick={() => setActiveTab('recipes')}
-                className="px-5 py-2.5 text-sm font-semibold text-emerald-700 bg-emerald-50 rounded-xl hover:bg-emerald-100 transition-colors inline-flex items-center gap-2"
-              >
-                <ChefHat className="w-4 h-4" />
-                레시피 관리 탭으로 돌아가기
-              </button>
-            </div>
+            {/* 3-1 ~ 3-6. CartView 컴포넌트 */}
+            <CartView
+              cart={cart}
+              recipes={recipes}
+              aggregatedIngredients={aggregatedIngredients}
+              onUpdateTargetServings={handleUpdateTargetServings}
+              onRemoveFromCart={handleRemoveFromCart}
+              onGoToRecipes={() => setActiveTab('recipes')}
+            />
           </section>
         )}
       </main>
@@ -278,7 +318,7 @@ export default function App() {
 
       {/* 푸터 */}
       <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400">
-        식단 플래너 & 장바구니 • 모든 데이터는 브라우저 내부 LocalStorage에만 저장됩니다 (오프라인 지원)
+        식단 플래너 &amp; 장바구니 • 모든 데이터는 브라우저 내부 LocalStorage에만 저장됩니다 (오프라인 지원)
       </footer>
     </div>
   );

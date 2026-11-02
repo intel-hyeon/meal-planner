@@ -1,0 +1,39 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: 프로덕션 빌드
+        run: npm run build
+
+      - name: dist 폴더를 Pages 아티팩트로 업로드
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: GitHub Pages에 배포
+        id: deployment
+        uses: actions/deploy-pages@v4
