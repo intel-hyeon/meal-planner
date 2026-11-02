@@ -273,11 +273,11 @@ export default function RecipeModal({
                     />
                   </div>
 
-                  {/* 2-1. 양: 양의 실수 (초기 min=0.001) */}
+                  {/* 2-1 & 5-1. 양: 양의 실수 (0 이상, 스피너 1단위 정상 증감 개선) */}
                   <div className="flex-1 min-w-[70px]">
                     <input
                       type="number"
-                      min="0.001"
+                      min="0"
                       step="any"
                       value={ing.amount}
                       onChange={(e) => handleIngredientChange(ing.id, 'amount', e.target.value)}

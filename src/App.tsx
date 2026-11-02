@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ChefHat, ShoppingBag, Plus, Database, RefreshCw, Sparkles } from 'lucide-react';
+import { ChefHat, ShoppingBag, Plus, Sparkles, RotateCcw } from 'lucide-react';
 import { ActiveTab, Recipe, CartItem } from './types';
 import {
   loadRecipes,
@@ -9,7 +9,6 @@ import {
   saveCart,
   deleteCartItemFromStorage,
   clearAllStorage,
-  INITIAL_RECIPES,
 } from './utils/storage';
 import { aggregateCartIngredients } from './utils/calculator';
 import RecipeModal from './components/RecipeModal';
@@ -26,7 +25,7 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRecipe, setEditingRecipe] = useState<Recipe | null>(null);
 
-  // 1-2 & 4-1. 브라우저 내 LocalStorage에서 초기 데이터 불러오기 및 고아 데이터 정리
+  // 1-2. 브라우저 내 LocalStorage에서 초기 데이터 불러오기
   useEffect(() => {
     const loadedRecipes = loadRecipes();
     const loadedCart = loadCart();
@@ -42,7 +41,7 @@ export default function App() {
     setCart(sanitizedCart);
   }, []);
 
-  // 4-1. 레시피 목록이 변경될 때 장바구니의 무결성을 항상 보장 (고아 데이터 자동 제거)
+  // 레시피 목록이 변경될 때 장바구니의 무결성을 항상 보장 (고아 데이터 자동 제거)
   useEffect(() => {
     if (recipes.length === 0 && cart.length > 0) {
       setCart([]);
@@ -59,12 +58,6 @@ export default function App() {
       return prevCart;
     });
   }, [recipes]);
-
-  // 3-5 & 3-6. 장바구니 합산 & 가나다순 정렬 (useMemo로 파생 상태 계산)
-  const aggregatedIngredients = useMemo(
-    () => aggregateCartIngredients(recipes, cart),
-    [recipes, cart]
-  );
 
   const showStatus = (msg: string) => {
     setStatusMessage(msg);
@@ -90,17 +83,17 @@ export default function App() {
 
     if (isEdit) {
       updatedRecipes = recipes.map((r) => (r.id === savedRecipe.id ? savedRecipe : r));
-      showStatus(`'${savedRecipe.name}' 레시피가 수정되었습니다. (빈칸은 자동 정리됨)`);
+      showStatus(`'${savedRecipe.name}' 레시피가 수정되었습니다.`);
     } else {
       updatedRecipes = [savedRecipe, ...recipes];
-      showStatus(`새 레시피 '${savedRecipe.name}'가 등록되었습니다. (빈칸은 자동 정리됨)`);
+      showStatus(`새 레시피 '${savedRecipe.name}'가 등록되었습니다.`);
     }
 
     setRecipes(updatedRecipes);
     saveRecipes(updatedRecipes);
   };
 
-  // 1-3 & 2-7. 캐시에서 특정 레시피 삭제
+  // 1-3 & 2-7 & 4-1. 캐시에서 특정 레시피 삭제
   const handleDeleteRecipe = (id: string, name: string) => {
     if (!window.confirm(`'${name}' 레시피를 정말 삭제하시겠습니까? (캐시에서도 영구 삭제됩니다)`)) {
       return;
@@ -109,67 +102,75 @@ export default function App() {
     const updatedRecipes = recipes.filter((r) => r.id !== id);
     setRecipes(updatedRecipes);
 
+    // 4-1. 장바구니 동기화 삭제 (장바구니에 담겨있던 해당 레시피를 찾아 자동으로 지워 기존/null 값이 남지 않도록 동기화)
     deleteCartItemFromStorage(id);
     const updatedCart = cart.filter((item) => item.recipeId !== id);
     setCart(updatedCart);
+    saveCart(updatedCart);
 
-    showStatus(`'${name}' 레시피가 LocalStorage 캐시에서 안전하게 삭제되었습니다.`);
+    showStatus(`'${name}' 레시피가 삭제되었습니다.`);
   };
 
-  // 3-1. 장바구니 담기 / 제거 토글
-  const handleToggleCart = (recipe: Recipe) => {
-    const isAlreadyInCart = cart.some((item) => item.recipeId === recipe.id);
+  // 캐시 전체 비우기 (경고창 확인 후 안전하게 초기화)
+  const handleClearAllStorage = () => {
+    const confirmed = window.confirm(
+      '⚠️ 경고: LocalStorage의 모든 캐시 데이터를 삭제하시겠습니까?\n등록된 모든 레시피와 장바구니 내용이 영구적으로 초기화됩니다.'
+    );
+    if (!confirmed) return;
 
-    if (isAlreadyInCart) {
-      // 장바구니에서 제거
-      deleteCartItemFromStorage(recipe.id);
-      const updatedCart = cart.filter((item) => item.recipeId !== recipe.id);
-      setCart(updatedCart);
-      showStatus(`'${recipe.name}'가 장바구니에서 제거되었습니다.`);
+    clearAllStorage();
+    setRecipes([]);
+    setCart([]);
+    showStatus('모든 로컬 캐시 데이터가 초기화되었습니다.');
+  };
+
+  // 3-1. 레시피 카드를 장바구니에 담기 / 빼기 토글
+  const handleToggleCart = (recipe: Recipe) => {
+    const existingIndex = cart.findIndex((item) => item.recipeId === recipe.id);
+    let updatedCart: CartItem[];
+
+    if (existingIndex >= 0) {
+      // 이미 담겨있으면 제거
+      updatedCart = cart.filter((item) => item.recipeId !== recipe.id);
+      showStatus(`'${recipe.name}' 레시피가 장바구니에서 제외되었습니다.`);
     } else {
-      // 장바구니에 추가 (초기 목표 인분: 1)
-      const newCartItem: CartItem = {
+      // 새로 담기 (3-2. 초기 디폴트 M인분 값: 1)
+      const newItem: CartItem = {
         recipeId: recipe.id,
         targetServings: 1,
       };
-      const updatedCart = [...cart, newCartItem];
-      setCart(updatedCart);
-      saveCart(updatedCart);
-      showStatus(`'${recipe.name}'가 장바구니에 담겼습니다.`);
+      updatedCart = [...cart, newItem];
+      showStatus(`'${recipe.name}' 레시피가 장바구니에 담겼습니다.`);
     }
+
+    setCart(updatedCart);
+    saveCart(updatedCart);
   };
 
-  // 3-2. 장바구니 내 목표 인분 수(M) 업데이트
-  const handleUpdateTargetServings = (recipeId: string, servings: number) => {
+  // 3-2. 장바구니 내 요리할 인분 수(M) 수정 및 캐시 동기화
+  const handleUpdateTargetServings = (recipeId: string, targetServings: number) => {
     const updatedCart = cart.map((item) =>
-      item.recipeId === recipeId ? { ...item, targetServings: servings } : item
+      item.recipeId === recipeId ? { ...item, targetServings } : item
     );
     setCart(updatedCart);
     saveCart(updatedCart);
   };
 
-  // 장바구니에서 특정 레시피 제거 (장바구니 탭 내 삭제 버튼)
+  // 장바구니에서 단일 항목 제거
   const handleRemoveFromCart = (recipeId: string) => {
     deleteCartItemFromStorage(recipeId);
     const updatedCart = cart.filter((item) => item.recipeId !== recipeId);
     setCart(updatedCart);
-    showStatus('장바구니에서 레시피를 제거했습니다.');
+    saveCart(updatedCart);
   };
 
-  // 기본 샘플 레시피 복원
-  const handleResetSampleData = () => {
-    saveRecipes(INITIAL_RECIPES);
-    setRecipes(INITIAL_RECIPES);
-    showStatus('기본 샘플 레시피가 LocalStorage에 복원되었습니다.');
-  };
+  // 3-5 & 3-6. 중복 재료 합산 및 가나다순 정렬 계산 (메모이제이션)
+  const aggregatedIngredients = useMemo(() => {
+    return aggregateCartIngredients(recipes, cart);
+  }, [recipes, cart]);
 
-  // 캐시 완전 비우기
-  const handleClearAllStorage = () => {
-    if (!window.confirm('LocalStorage의 모든 캐시 데이터를 초기화하시겠습니까?')) return;
-    clearAllStorage();
-    setRecipes([]);
-    setCart([]);
-    showStatus('모든 로컬 캐시 데이터가 삭제되었습니다.');
+  const isRecipeInCart = (recipeId: string) => {
+    return cart.some((item) => item.recipeId === recipeId);
   };
 
   return (
@@ -182,7 +183,7 @@ export default function App() {
               <ChefHat className="w-6 h-6" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-900 leading-tight">식단 플래너 &amp; 장바구니</h1>
+              <h1 className="text-lg font-bold text-slate-900 leading-tight">식단 플래너 & 장바구니</h1>
               <p className="text-xs text-slate-500">레시피 기반 맞춤 식재료 비례 계산기</p>
             </div>
           </div>
@@ -245,22 +246,13 @@ export default function App() {
               {/* 상단 컨트롤 버튼 그룹 */}
               <div className="flex items-center gap-2 flex-wrap">
                 <button
-                  onClick={handleResetSampleData}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
-                  title="기본 샘플 레시피 다시 불러오기"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  샘플 복원
-                </button>
-                <button
                   onClick={handleClearAllStorage}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-rose-600 bg-white border border-rose-200 rounded-lg hover:bg-rose-50 transition-colors"
-                  title="로컬 스토리지 캐시 비우기"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-rose-600 bg-white border border-rose-200 rounded-xl hover:bg-rose-50 transition-colors shadow-2xs"
+                  title="로컬 스토리지 캐시 전체 초기화"
                 >
-                  <Database className="w-3.5 h-3.5" />
+                  <RotateCcw className="w-3.5 h-3.5" />
                   캐시 비우기
                 </button>
-                {/* 2-1. 새 레시피 작성 버튼 */}
                 <button
                   onClick={handleOpenCreateModal}
                   className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-xl hover:bg-emerald-700 transition-colors shadow-xs"
@@ -271,7 +263,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* 2-7. 레시피 카드 목록 그리드 렌더링 */}
+            {/* 레시피 카드 목록 그리드 */}
             {recipes.length === 0 ? (
               <div className="bg-white border-2 border-dashed border-slate-200 rounded-2xl p-12 text-center">
                 <ChefHat className="w-12 h-12 text-slate-300 mx-auto mb-3" />
@@ -286,12 +278,6 @@ export default function App() {
                   >
                     <Plus className="w-4 h-4" /> 새 레시피 작성
                   </button>
-                  <button
-                    onClick={handleResetSampleData}
-                    className="px-4 py-2 text-sm font-semibold text-emerald-700 bg-emerald-50 rounded-xl hover:bg-emerald-100 transition-colors"
-                  >
-                    샘플 불러오기
-                  </button>
                 </div>
               </div>
             ) : (
@@ -303,7 +289,7 @@ export default function App() {
                     onEdit={handleOpenEditModal}
                     onDelete={handleDeleteRecipe}
                     onAddToCart={handleToggleCart}
-                    isInCart={cart.some((item) => item.recipeId === recipe.id)}
+                    isInCart={isRecipeInCart(recipe.id)}
                   />
                 ))}
               </div>
@@ -321,10 +307,9 @@ export default function App() {
               </p>
             </div>
 
-            {/* 3-1 ~ 3-6 & 4-1 ~ 4-3. CartView 컴포넌트 */}
             <CartView
-              cart={cart}
               recipes={recipes}
+              cart={cart}
               aggregatedIngredients={aggregatedIngredients}
               onUpdateTargetServings={handleUpdateTargetServings}
               onRemoveFromCart={handleRemoveFromCart}
@@ -345,7 +330,7 @@ export default function App() {
 
       {/* 푸터 */}
       <footer className="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-400">
-        식단 플래너 &amp; 장바구니 • 모든 데이터는 브라우저 내부 LocalStorage에만 저장됩니다 (오프라인 지원)
+        식단 플래너 & 장바구니 • 모든 데이터는 브라우저 내부 LocalStorage에만 저장됩니다 (오프라인 지원)
       </footer>
     </div>
   );
